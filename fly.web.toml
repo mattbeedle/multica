@@ -8,7 +8,7 @@
 # apps/web/next.config.ts forward /api/*, /ws, /auth/*, /uploads/* to
 # multica-backend over flycast.
 
-app = "multica-web"
+app = "multica-mattbeedle"
 primary_region = "iad"
 
 [build]
