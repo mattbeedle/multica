@@ -2,7 +2,7 @@
 
 This guide deploys Multica as **two Fly apps** (`multica-backend` + `multica-web`) sharing a single public hostname, with **PlanetScale Postgres** for the database and **Tigris** for file uploads. The operator does not need to modify any source code.
 
-For the Docker Compose self-host, see `SELF_HOSTING.md`. For Fly-specific advanced topics (multi-region, observability, custom CDN), this file is the only reference.
+For the Docker Compose self-host, see `SELF_HOSTING.md`. Multi-region, observability, and custom CDN are not yet covered for Fly — see "What is not covered here" at the end.
 
 ## Architecture
 
@@ -54,15 +54,17 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
 
 3. **Create the apps**
    ```bash
-   fly apps create multica-backend --org personal
-   fly apps create multica-web     --org personal
+   # Drop the --org flag if you only have one Fly org (the default).
+   # Otherwise pass --org <your-org-slug>; list orgs with `fly orgs list`.
+   fly apps create multica-backend
+   fly apps create multica-web
    ```
 
 4. **Provision Tigris**
    ```bash
    fly storage create -a multica-backend
    ```
-   Save the printed bucket name and endpoint URL. Multica reads `S3_BUCKET`, `S3_REGION`, and `AWS_ENDPOINT_URL` (not the Tigris defaults `BUCKET_NAME` / `AWS_ENDPOINT_URL_S3`), so add the aliases:
+   Save the printed bucket name and endpoint URL. `fly storage create` also automatically sets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as Fly secrets — those are what Multica's S3 client reads, so no further action is needed for credentials. Multica reads `S3_BUCKET`, `S3_REGION`, and `AWS_ENDPOINT_URL` (not the Tigris defaults `BUCKET_NAME` / `AWS_ENDPOINT_URL_S3`), so add the aliases:
    ```bash
    fly secrets set -a multica-backend \
      S3_BUCKET=<bucket-name-from-tigris> \
@@ -84,7 +86,7 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
      ALLOWED_EMAILS=you@<your-domain>
    ```
 
-6. **Deploy** (backend first — web's build args reference its flycast hostname)
+6. **Deploy** (backend first so its `/readyz` health check is passing before the web app starts proxying traffic to it)
    ```bash
    fly deploy -c fly.backend.toml
    fly deploy -c fly.web.toml
@@ -100,14 +102,21 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
    ```
    Wait for `Status: Ready`.
 
-8. **Point your CLI**
+8. **Log in for the first time**
+   Open `https://multica.<your-domain>` in a browser. Enter your email (the one in `ALLOWED_EMAILS`) and request a code. Until Resend is configured, the code prints to the backend logs:
+   ```bash
+   fly logs -a multica-backend | grep -i "verification code"
+   ```
+   Copy the 6-digit code into the browser and submit. Create a workspace.
+
+9. **Point your CLI**
    ```bash
    multica config set server_url https://multica.<your-domain>
    multica config set app_url    https://multica.<your-domain>
    multica login
    multica daemon start
    ```
-   The login code is in `fly logs -a multica-backend` until you set up Resend (see below).
+   The CLI uses the same login flow.
 
 ## Day-2 operations
 
@@ -120,7 +129,7 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
 | SSH | `fly ssh console -a multica-backend` |
 | List secrets | `fly secrets list -a multica-backend` |
 | Add a teammate | `fly secrets set -a multica-backend ALLOWED_EMAILS=a@x,b@y` (comma-separated) |
-| List releases | `fly releases -a multica-backend` |
+| List releases | `fly releases list -a multica-backend` |
 
 ## Adding email auth (Resend)
 
@@ -139,8 +148,8 @@ Until Resend is configured, login codes only print to backend logs — fine for 
 
 | Failure | Response |
 |---|---|
-| Bad backend deploy crashes on startup | `fly releases -a multica-backend` then `fly machine update --image registry.fly.io/multica-backend:deployment-<old-id>` |
-| Bad web deploy 500s on every request | Same with `-a multica-web` |
+| Bad backend deploy crashes on startup | `fly releases list -a multica-backend` to find the previous deployment ID, then `fly deploy -c fly.backend.toml --image registry.fly.io/multica-backend:deployment-<old-id>` |
+| Bad web deploy 500s on every request | `fly releases list -a multica-web` to find the previous deployment ID, then `fly deploy -c fly.web.toml --image registry.fly.io/multica-web:deployment-<old-id>` |
 | Migration fails partway through | `fly ssh console -a multica-backend` → `./migrate down` to last good version, then redeploy old backend image. **Manual; data loss possible if migration was destructive.** |
 
 ## Cost estimate
