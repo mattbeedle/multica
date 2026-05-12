@@ -1,0 +1,52 @@
+# Fly.io config for the Multica Next.js frontend.
+#
+# Usage:
+#   fly deploy -c fly.web.toml
+#
+# This app is the only public ingress. multica.<your-domain> maps here
+# (Section "Day-1 setup" in SELF_HOSTING_FLY.md). Next.js rewrites in
+# apps/web/next.config.ts forward /api/*, /ws, /auth/*, /uploads/* to
+# multica-backend over flycast.
+
+app = "multica-web"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.web"
+
+  [build.args]
+    # Build-time only: Next.js bakes this into rewrites().
+    REMOTE_API_URL = "http://multica-backend.flycast:8080"
+    NEXT_PUBLIC_APP_VERSION = "fly"
+
+[env]
+  PORT = "3000"
+  HOSTNAME = "0.0.0.0"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "get"
+    path = "/"
+    protocol = "http"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+  swap_size_mb = 512
