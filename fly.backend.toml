@@ -29,10 +29,6 @@ primary_region = "iad"
   auto_start_machines = false
   min_machines_running = 1
 
-  [[services.ports]]
-    port = 8080
-    handlers = []
-
   # Readiness check: /readyz returns 200 only after DB ping succeeds AND
   # the latest migration has been applied. Gate behind this so Fly does
   # not route flycast traffic to a half-started machine.
