@@ -59,6 +59,7 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
    fly apps create multica-backend
    fly apps create multica-web
    ```
+   Fly app names are **globally unique** across all Fly users. If `multica-backend` or `multica-web` is already taken, pick a unique name (e.g. `multica-<your-handle>`) and update the `app = "..."` line in the corresponding `fly.*.toml` file before deploying. The backend's name is referenced internally only (web reaches it via `<backend-app>.flycast`); the web's name shows up as `<web-app>.fly.dev` until the custom domain attaches.
 
 4. **Provision Tigris**
    ```bash
@@ -87,30 +88,47 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
 
    The `&pool_max_conns=10` query param caps the backend's pgxpool below typical PlanetScale connection limits. If your plan allows more, raise it but always leave headroom for `psql` sessions and migrations.
 
-6. **Deploy** (backend first so its `/readyz` health check is passing before the web app starts proxying traffic to it)
+6. **Deploy backend, then lock it down to flycast-only**
    ```bash
    fly deploy -c fly.backend.toml
+   ```
+   `fly deploy` auto-allocates a dedicated IPv6 + shared IPv4 to any app with a `[[services]]` block — even when no `[http_service]` exists. With `handlers = []` the public IPs route nothing, but they still cost (dedicated v6 ≈ $2/mo) and a future operator could accidentally make them live. Allocate the private flycast IP and release the public ones:
+   ```bash
+   fly ips allocate-v6 --private -a multica-backend
+   fly ips list -a multica-backend                         # note the public v4 + v6 addresses
+   fly ips release <public-v6> -a multica-backend
+   fly ips release <public-v4> -a multica-backend
+   fly ips list -a multica-backend                         # should show only the `private ingress` v6
+   ```
+   The flycast hostname `multica-backend.flycast` only resolves once the private v6 exists. **Skipping this step makes the web → backend proxy fail with `getaddrinfo ENOTFOUND multica-backend.flycast` after the next deploy.**
+
+7. **Deploy web** (separate step so it picks up the now-resolvable flycast hostname)
+   ```bash
    fly deploy -c fly.web.toml
    ```
 
-7. **Custom domain + TLS**
+8. **Custom domain + TLS**
    ```bash
    fly certs create -a multica-web multica.<your-domain>
    ```
-   Add the DNS records Fly prints (CNAME to `multica-web.fly.dev` plus the ACME challenge record). Then:
+   Fly prints A + AAAA records (not a CNAME — Fly's edge needs the IPs directly). Add both in your DNS provider:
+   - `A     multica.<your-domain> → <Fly-printed v4>`
+   - `AAAA  multica.<your-domain> → <Fly-printed v6>`
+
+   On Cloudflare, the orange-cloud proxy MUST be **off** until cert validation completes — Cloudflare's proxy interferes with Fly's ACME challenge. After the cert shows `Status: Issued` you can re-enable the proxy if you want it. Check status:
    ```bash
    fly certs show multica.<your-domain> -a multica-web
    ```
-   Wait for `Status: Ready`.
+   Validation usually completes within a minute of DNS records appearing.
 
-8. **Log in for the first time**
+9. **Log in for the first time**
    Open `https://multica.<your-domain>` in a browser. Enter your email (the one in `ALLOWED_EMAILS`) and request a code. Until Resend is configured, the code prints to the backend logs:
    ```bash
    fly logs -a multica-backend | grep -i "verification code"
    ```
    Copy the 6-digit code into the browser and submit. Create a workspace.
 
-9. **Point your CLI**
+10. **Point your CLI**
    ```bash
    multica config set server_url https://multica.<your-domain>
    multica config set app_url    https://multica.<your-domain>
