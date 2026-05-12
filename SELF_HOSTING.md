@@ -10,6 +10,8 @@ Deploy Multica on your own infrastructure in minutes.
 | **Frontend** | Web application | Next.js 16 |
 | **Database** | Primary data store | PostgreSQL 17 (`pgcrypto` + `pg_trgm`) |
 
+> **Deploying to Fly.io instead of Docker Compose?** See [`SELF_HOSTING_FLY.md`](SELF_HOSTING_FLY.md).
+
 Each user who runs AI agents locally also installs the **`multica` CLI** and runs the **agent daemon** on their own machine.
 
 ## Quick Install (Recommended)
