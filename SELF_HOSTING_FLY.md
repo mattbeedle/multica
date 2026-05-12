@@ -79,12 +79,13 @@ The Next.js rewrites in `apps/web/next.config.ts` proxy `/api/*`, `/ws`, `/auth/
      JWT_SECRET="$(openssl rand -hex 32)" \
      FRONTEND_ORIGIN=https://multica.<your-domain> \
      CORS_ALLOWED_ORIGINS=https://multica.<your-domain> \
-     MULTICA_APP_URL=https://multica.<your-domain> \
      COOKIE_DOMAIN=multica.<your-domain> \
      APP_ENV=production \
      ALLOW_SIGNUP=false \
      ALLOWED_EMAILS=you@<your-domain>
    ```
+
+   The `&pool_max_conns=10` query param caps the backend's pgxpool below typical PlanetScale connection limits. If your plan allows more, raise it but always leave headroom for `psql` sessions and migrations.
 
 6. **Deploy** (backend first so its `/readyz` health check is passing before the web app starts proxying traffic to it)
    ```bash
@@ -150,7 +151,7 @@ Until Resend is configured, login codes only print to backend logs — fine for 
 |---|---|
 | Bad backend deploy crashes on startup | `fly releases list -a multica-backend` to find the previous deployment ID, then `fly deploy -c fly.backend.toml --image registry.fly.io/multica-backend:deployment-<old-id>` |
 | Bad web deploy 500s on every request | `fly releases list -a multica-web` to find the previous deployment ID, then `fly deploy -c fly.web.toml --image registry.fly.io/multica-web:deployment-<old-id>` |
-| Migration fails partway through | `fly ssh console -a multica-backend` → `./migrate down` to last good version, then redeploy old backend image. **Manual; data loss possible if migration was destructive.** |
+| Migration fails partway through | **`./migrate down` rolls back ALL migrations** (the binary has no `--target` / `--version` flag — it walks every `.down.sql` file in reverse). Prefer redeploying the previous backend image (see the row above) and letting `./migrate up` settle at the prior version. Only run `./migrate down` if you have a verified backup and are prepared to reprovision. |
 
 ## Cost estimate
 
