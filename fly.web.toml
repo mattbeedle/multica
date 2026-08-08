@@ -25,6 +25,7 @@ primary_region = "iad"
   PORT = "3000"
   HOSTNAME = "0.0.0.0"
   NODE_ENV = "production"
+  REMOTE_API_URL = "http://multica-backend.flycast:8080"
 
 [http_service]
   internal_port = 3000
