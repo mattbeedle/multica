@@ -41,10 +41,17 @@ primary_region = "iad"
   # Readiness check: /readyz returns 200 only after DB ping succeeds AND
   # the latest migration has been applied. Gate behind this so Fly does
   # not route flycast traffic to a half-started machine.
+  #
+  # grace_period covers boot-time migration, which the entrypoint runs before
+  # the server starts. A deploy spanning many upstream releases applies a large
+  # batch of migrations serially, several of them CREATE INDEX CONCURRENTLY, and
+  # a 60s grace marked the machine unhealthy while migrate was still making
+  # progress. A failed migration still crash-loops the machine, so a long grace
+  # delays the verdict without hiding a real failure.
   [[services.http_checks]]
     interval = "15s"
     timeout = "5s"
-    grace_period = "60s"
+    grace_period = "600s"
     method = "get"
     path = "/readyz"
     protocol = "http"
